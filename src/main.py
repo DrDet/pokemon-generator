@@ -1,3 +1,5 @@
+from argparse import ArgumentParser
+
 import os
 import json
 import time
@@ -11,7 +13,6 @@ from PIL import Image
 import numpy as np
 
 from aegan.aegan import AEGAN
-
 
 BATCH_SIZE = 32
 LATENT_DIM = 16
@@ -28,6 +29,11 @@ def save_images(GAN, vec, filename):
 
 
 def main():
+    parser = ArgumentParser()
+    parser.add_argument("--generator-state", type=str, help='Generator state dict')
+    parser.add_argument("--mode", type=str, default='train', help='Run mode: train or test')
+    args = parser.parse_args()
+
     os.makedirs("results/generated", exist_ok=True)
     os.makedirs("results/reconstructed", exist_ok=True)
     os.makedirs("results/checkpoints", exist_ok=True)
@@ -70,36 +76,41 @@ def main():
         device=device,
         batch_size=BATCH_SIZE,
     )
-    start = time.time()
-    for i in range(EPOCHS):
-        while True:
-            try:
-                with open("pause.json") as f:
-                    pause = json.load(f)
-                if pause['pause'] == 0:
-                    break
-                print(f"Pausing for {pause['pause']} seconds")
-                time.sleep(pause["pause"])
-            except (KeyError, json.decoder.JSONDecodeError, FileNotFoundError):
-                break
-        elapsed = int(time.time() - start)
-        elapsed = f"{elapsed // 3600:02d}:{(elapsed % 3600) // 60:02d}:{elapsed % 60:02d}"
-        print(f"Epoch {i + 1}; Elapsed time = {elapsed}s")
-        gan.train_epoch(max_steps=100)
-        if (i + 1) % 50 == 0:
-            torch.save(
-                gan.generator.state_dict(),
-                os.path.join("results", "checkpoints", f"gen.{i:05d}.pt"))
-        save_images(gan, test_noise,
-                    os.path.join("results", "generated", f"gen.{i:04d}.png"))
 
-        with torch.no_grad():
-            reconstructed = gan.generator(gan.encoder(test_ims.cuda())).cpu()
-        reconstructed = tv.utils.make_grid(reconstructed[:36], normalize=True, nrow=6, )
-        reconstructed = reconstructed.numpy().transpose((1, 2, 0))
-        reconstructed = np.array(reconstructed * 255, dtype=np.uint8)
-        reconstructed = Image.fromarray(reconstructed)
-        reconstructed.save(os.path.join("results", "reconstructed", f"gen.{i:04d}.png"))
+    if args.generator_state is not None:
+        gan.generator.load_state_dict(torch.load(args.generator_state, map_location=device))
+
+    if args.mode == 'train':
+        start = time.time()
+        for i in range(EPOCHS):
+            while True:
+                try:
+                    with open("pause.json") as f:
+                        pause = json.load(f)
+                    if pause['pause'] == 0:
+                        break
+                    print(f"Pausing for {pause['pause']} seconds")
+                    time.sleep(pause["pause"])
+                except (KeyError, json.decoder.JSONDecodeError, FileNotFoundError):
+                    break
+            elapsed = int(time.time() - start)
+            elapsed = f"{elapsed // 3600:02d}:{(elapsed % 3600) // 60:02d}:{elapsed % 60:02d}"
+            print(f"Epoch {i + 1}; Elapsed time = {elapsed}s")
+            gan.train_epoch(max_steps=100)
+            if (i + 1) % 50 == 0:
+                torch.save(
+                    gan.generator.state_dict(),
+                    os.path.join("results", "checkpoints", f"gen.{i:05d}.pt"))
+            save_images(gan, test_noise,
+                        os.path.join("results", "generated", f"gen.{i:04d}.png"))
+
+            with torch.no_grad():
+                reconstructed = gan.generator(gan.encoder(test_ims.cuda())).cpu()
+            reconstructed = tv.utils.make_grid(reconstructed[:36], normalize=True, nrow=6, )
+            reconstructed = reconstructed.numpy().transpose((1, 2, 0))
+            reconstructed = np.array(reconstructed * 255, dtype=np.uint8)
+            reconstructed = Image.fromarray(reconstructed)
+            reconstructed.save(os.path.join("results", "reconstructed", f"gen.{i:04d}.png"))
 
     images = gan.generate_samples()
     ims = tv.utils.make_grid(images, normalize=True)
