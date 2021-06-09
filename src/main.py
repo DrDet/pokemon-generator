@@ -37,6 +37,7 @@ def main():
     os.makedirs("results/generated", exist_ok=True)
     os.makedirs("results/reconstructed", exist_ok=True)
     os.makedirs("results/checkpoints", exist_ok=True)
+    os.makedirs("results/losses", exist_ok=True)
 
     root = os.path.join("../data")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -83,6 +84,15 @@ def main():
             gan.load_state(f"results/checkpoints/epoch_{args.checkpoint_epoch:05d}")
 
         start = time.time()
+
+        losses = {'G': [],
+                  'E': [],
+                  'Dx': [],
+                  'Dz': [],
+                  'Rx': [],
+                  'Rz': []}
+        for name in losses:
+            with open(os.path.join('results', 'losses', f'{name}.txt'), 'w') as _: pass   # reset files with losses
         for i in range(EPOCHS):
             while True:
                 try:
@@ -97,21 +107,34 @@ def main():
             elapsed = int(time.time() - start)
             elapsed = f"{elapsed // 3600:02d}:{(elapsed % 3600) // 60:02d}:{elapsed % 60:02d}"
             print(f"Epoch {i + 1}; Elapsed time = {elapsed}s")
-            # gan.train_epoch(max_steps=100)
+            lgx, lgz, ldx, ldz, lrx, lrz = gan.train_epoch(max_steps=100)
+
+            losses['G'].append(str(lgx))
+            losses['E'].append(str(lgz))
+            losses['Dx'].append(str(ldx))
+            losses['Dz'].append(str(ldz))
+            losses['Rx'].append(str(lrx))
+            losses['Rz'].append(str(lrz))
+
             if (i + 1) % 50 == 0:
                 state_dir = f"results/checkpoints/epoch_{i:05d}"
                 os.makedirs(state_dir, exist_ok=True)
+                for name, vals in losses.items():
+                    with open(os.path.join('results', 'losses', f'{name}.txt'), 'a') as file:
+                        file.write(" ".join(vals) + " ")
+                    losses[name] = []
                 gan.save_state(state_dir)
-            save_images(gan, test_noise,
-                        os.path.join("results", "generated", f"gen.{i:04d}.png"))
 
-            with torch.no_grad():
-                reconstructed = gan.generator(gan.encoder(test_ims.to(device=device))).to(device=device)
-            reconstructed = tv.utils.make_grid(reconstructed[:36], normalize=True, nrow=6, )
-            reconstructed = reconstructed.numpy().transpose((1, 2, 0))
-            reconstructed = np.array(reconstructed * 255, dtype=np.uint8)
-            reconstructed = Image.fromarray(reconstructed)
-            reconstructed.save(os.path.join("results", "reconstructed", f"gen.{i:04d}.png"))
+            if (i + 1) % 10 == 0:
+                save_images(gan, test_noise, os.path.join("results", "generated", f"gen.{i:04d}.png"))
+
+                with torch.no_grad():
+                    reconstructed = gan.generator(gan.encoder(test_ims.to(device=device))).to(device=device)
+                reconstructed = tv.utils.make_grid(reconstructed[:36], normalize=True, nrow=6, )
+                reconstructed = reconstructed.numpy().transpose((1, 2, 0))
+                reconstructed = np.array(reconstructed * 255, dtype=np.uint8)
+                reconstructed = Image.fromarray(reconstructed)
+                reconstructed.save(os.path.join("results", "reconstructed", f"gen.{i:04d}.png"))
 
     else:
         gan.generator.load_state_dict(torch.load(args.test_generator, map_location=device))
