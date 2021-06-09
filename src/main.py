@@ -30,8 +30,8 @@ def save_images(GAN, vec, filename):
 
 def main():
     parser = ArgumentParser()
-    parser.add_argument("--generator-state", type=str, help='Generator state dict')
-    parser.add_argument("--mode", type=str, default='train', help='Run mode: train or test')
+    parser.add_argument("--checkpoint-epoch", type=int, help='Checkpoint epoch number to continue training')
+    parser.add_argument("--test-generator", type=str, help='Run mode: train or test')
     args = parser.parse_args()
 
     os.makedirs("results/generated", exist_ok=True)
@@ -77,10 +77,11 @@ def main():
         batch_size=BATCH_SIZE,
     )
 
-    if args.generator_state is not None:
-        gan.generator.load_state_dict(torch.load(args.generator_state, map_location=device))
+    if args.test_generator is None:
+        if args.checkpoint_epoch is not None:
+            print(f'Loading state from epoch {args.checkpoint_epoch}')
+            gan.load_state(f"results/checkpoints/epoch_{args.checkpoint_epoch:05d}")
 
-    if args.mode == 'train':
         start = time.time()
         for i in range(EPOCHS):
             while True:
@@ -96,11 +97,11 @@ def main():
             elapsed = int(time.time() - start)
             elapsed = f"{elapsed // 3600:02d}:{(elapsed % 3600) // 60:02d}:{elapsed % 60:02d}"
             print(f"Epoch {i + 1}; Elapsed time = {elapsed}s")
-            gan.train_epoch(max_steps=100)
+            # gan.train_epoch(max_steps=100)
             if (i + 1) % 50 == 0:
-                torch.save(
-                    gan.generator.state_dict(),
-                    os.path.join("results", "checkpoints", f"gen.{i:05d}.pt"))
+                state_dir = f"results/checkpoints/epoch_{i:05d}"
+                os.makedirs(state_dir, exist_ok=True)
+                gan.save_state(state_dir)
             save_images(gan, test_noise,
                         os.path.join("results", "generated", f"gen.{i:04d}.png"))
 
@@ -111,6 +112,9 @@ def main():
             reconstructed = np.array(reconstructed * 255, dtype=np.uint8)
             reconstructed = Image.fromarray(reconstructed)
             reconstructed.save(os.path.join("results", "reconstructed", f"gen.{i:04d}.png"))
+
+    else:
+        gan.generator.load_state_dict(torch.load(args.test_generator, map_location=device))
 
     images = gan.generate_samples()
     ims = tv.utils.make_grid(images, normalize=True)

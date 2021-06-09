@@ -1,3 +1,4 @@
+import os
 import torch
 from torch import nn
 from torch import optim
@@ -73,6 +74,23 @@ class AEGAN():
         self.optim_dl = optim.Adam(self.discriminator_latent.parameters(),
                                    lr=1e-4, betas=(0.5, 0.999),
                                    weight_decay=1e-8)
+
+    def _get_nets(self):
+        nets = {
+            'generator': self.generator,
+            'encoder': self.encoder,
+            'discriminator_image': self.discriminator_image,
+            'discriminator_latent': self.discriminator_latent,
+        }
+        return nets
+
+    def save_state(self, dir):
+        for name, net in self._get_nets().items():
+            torch.save(net.state_dict(), os.path.join(dir, name + ".pt"))
+
+    def load_state(self, dir):
+        for name, net in self._get_nets().items():
+            net.load_state_dict(torch.load(os.path.join(dir, name + ".pt"), map_location=self.device))
 
     def generate_samples(self, latent_vec=None, num=None):
         """Sample images from the generator.
