@@ -205,20 +205,8 @@ class AEGAN():
             lgz += lgz_
             lrx += lrx_
             lrz += lrz_
-            if print_frequency and (batch + 1) % print_frequency == 0:
-                print(f"{batch + 1}/{len(self.dataloader)}:"
-                      f" G={lgx / (eps + (batch + 1) * ALPHA_DISCRIMINATE_IMAGE):.3f},"
-                      f" E={lgz / (eps + (batch + 1) * ALPHA_DISCRIMINATE_LATENT):.3f},"
-                      f" Dx={ldx / (eps + (batch + 1)):.3f},"
-                      f" Dz={ldz / (eps + (batch + 1)):.3f}",
-                      f" Rx={lrx / (eps + (batch + 1) * ALPHA_RECONSTRUCT_IMAGE):.3f}",
-                      f" Rz={lrz / (eps + (batch + 1) * ALPHA_RECONSTRUCT_LATENT):.3f}",
-                      end='\r',
-                      flush=True)
             if max_steps and batch == max_steps:
                 break
-        if print_frequency:
-            print()
         lgx /= batch
         lgz /= batch
         ldx /= batch

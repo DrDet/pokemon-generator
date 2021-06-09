@@ -1,6 +1,7 @@
 from argparse import ArgumentParser
 
 from aegan.aegan import AEGAN
+from aegan.stat import TrainInfoDumper, TrainInfo
 
 import torch
 import matplotlib.pyplot as plt
@@ -11,12 +12,11 @@ from torchvision.datasets import ImageFolder
 from torch.utils.data import DataLoader
 from PIL import Image
 
-import attr
 import json
 import os
 import pathlib
 import time
-
+from contextlib import closing
 
 
 def save_images(GAN, vec, filename):
@@ -42,7 +42,8 @@ def main():
 
     parser.add_argument("-l", "--log", default=None, type=pathlib.Path,
                         help="Path to the log file")
-    parser.add_argument("-i", "--input", default="data/", type=pathlib.Path, help="path to the root directory with images")
+    parser.add_argument("-i", "--input", default="data/", type=pathlib.Path,
+                        help="path to the root directory with images")
     args = parser.parse_args()
 
     os.makedirs("results/generated", exist_ok=True)
@@ -92,72 +93,52 @@ def main():
         batch_size=args.batch_size,
     )
 
-    if args.test_generator is None:
-        if args.checkpoint_epoch is not None:
-            print(f'Loading state from epoch {args.checkpoint_epoch}')
-            gan.load_state(f"results/checkpoints/epoch_{args.checkpoint_epoch:05d}")
+    with closing(TrainInfoDumper(args.log, write_header=args.start_epoch == 0)) as info_dumper:
+        if args.test_generator is None:
+            if args.checkpoint_epoch is not None:
+                print(f'Loading state from epoch {args.checkpoint_epoch}')
+                gan.load_state(f"results/checkpoints/epoch_{args.checkpoint_epoch:05d}")
 
-        start = time.time()
+            start = time.time()
 
-        losses = {'G': [],
-                  'E': [],
-                  'Dx': [],
-                  'Dz': [],
-                  'Rx': [],
-                  'Rz': []}
-        for name in losses:
-            with open(os.path.join('results', 'losses', f'{name}.txt'), 'w') as _: pass   # reset files with losses
+            for i in range(args.start_epoch, args.num_epochs):
+                elapsed = int(time.time() - start)
+                elapsed = f"{elapsed // 3600:02d}:{(elapsed % 3600) // 60:02d}:{elapsed % 60:02d}"
+                print(f"Epoch {i + 1}; Elapsed time = {elapsed}s")
 
-        for i in range(args.start_epoch, args.num_epochs):
-            while True:
-                try:
-                    with open("pause.json") as f:
-                        pause = json.load(f)
-                    if pause['pause'] == 0:
-                        break
-                    print(f"Pausing for {pause['pause']} seconds")
-                    time.sleep(pause["pause"])
-                except (KeyError, json.decoder.JSONDecodeError, FileNotFoundError):
-                    break
-            elapsed = int(time.time() - start)
-            elapsed = f"{elapsed // 3600:02d}:{(elapsed % 3600) // 60:02d}:{elapsed % 60:02d}"
-            print(f"Epoch {i + 1}; Elapsed time = {elapsed}s")
-            lgx, lgz, ldx, ldz, lrx, lrz = gan.train_epoch(max_steps=100)
+                lgx, lgz, ldx, ldz, lrx, lrz = gan.train_epoch(max_steps=100)
 
-            losses['G'].append(str(lgx))
-            losses['E'].append(str(lgz))
-            losses['Dx'].append(str(ldx))
-            losses['Dz'].append(str(ldz))
-            losses['Rx'].append(str(lrx))
-            losses['Rz'].append(str(lrz))
+                info_dumper.append(TrainInfo(iteration=i,
+                                             generator_loss=lgx,
+                                             encoder_loss=lgz,
+                                             discrem_x_loss=ldx,
+                                             discrem_z_loss=ldz,
+                                             reconstr_x_loss=lrx,
+                                             reconstr_z_loss=lrz))
 
-            if (i + 1) % 50 == 0:
-                state_dir = f"results/checkpoints/epoch_{i:05d}"
-                os.makedirs(state_dir, exist_ok=True)
-                for name, vals in losses.items():
-                    with open(os.path.join('results', 'losses', f'{name}.txt'), 'a') as file:
-                        file.write(" ".join(vals) + " ")
-                    losses[name] = []
-                gan.save_state(state_dir)
+                if (i + 1) % 50 == 0:
+                    state_dir = f"results/checkpoints/epoch_{i:05d}"
+                    os.makedirs(state_dir, exist_ok=True)
+                    gan.save_state(state_dir)
 
-            if (i + 1) % 10 == 0:
-                save_images(gan, test_noise, os.path.join("results", "generated", f"gen.{i:04d}.png"))
+                if (i + 1) % 10 == 0:
+                    save_images(gan, test_noise, os.path.join("results", "generated", f"gen.{i:04d}.png"))
 
-                with torch.no_grad():
-                    reconstructed = gan.generator(gan.encoder(test_ims.to(device=device))).to(device=device)
-                reconstructed = tv.utils.make_grid(reconstructed[:36], normalize=True, nrow=6, )
-                reconstructed = reconstructed.numpy().transpose((1, 2, 0))
-                reconstructed = np.array(reconstructed * 255, dtype=np.uint8)
-                reconstructed = Image.fromarray(reconstructed)
-                reconstructed.save(os.path.join("results", "reconstructed", f"gen.{i:04d}.png"))
+                    with torch.no_grad():
+                        reconstructed = gan.generator(gan.encoder(test_ims.to(device=device))).to(device=device)
+                    reconstructed = tv.utils.make_grid(reconstructed[:36], normalize=True, nrow=6, )
+                    reconstructed = reconstructed.numpy().transpose((1, 2, 0))
+                    reconstructed = np.array(reconstructed * 255, dtype=np.uint8)
+                    reconstructed = Image.fromarray(reconstructed)
+                    reconstructed.save(os.path.join("results", "reconstructed", f"gen.{i:04d}.png"))
 
-    else:
-        gan.generator.load_state_dict(torch.load(args.test_generator, map_location=device))
+        else:
+            gan.generator.load_state_dict(torch.load(args.test_generator, map_location=device))
 
-    images = gan.generate_samples()
-    ims = tv.utils.make_grid(images, normalize=True)
-    plt.imshow(ims.numpy().transpose((1, 2, 0)))
-    plt.show()
+        images = gan.generate_samples()
+        ims = tv.utils.make_grid(images, normalize=True)
+        plt.imshow(ims.numpy().transpose((1, 2, 0)))
+        plt.show()
 
 
 if __name__ == "__main__":
