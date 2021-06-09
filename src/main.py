@@ -1,22 +1,22 @@
 from argparse import ArgumentParser
 
-import os
-import json
-import time
+from aegan.aegan import AEGAN
 
 import torch
 import matplotlib.pyplot as plt
+import numpy as np
 import torchvision as tv
+
 from torchvision.datasets import ImageFolder
 from torch.utils.data import DataLoader
 from PIL import Image
-import numpy as np
 
-from aegan.aegan import AEGAN
+import attr
+import json
+import os
+import pathlib
+import time
 
-BATCH_SIZE = 32
-LATENT_DIM = 16
-EPOCHS = 20000
 
 
 def save_images(GAN, vec, filename):
@@ -31,7 +31,18 @@ def save_images(GAN, vec, filename):
 def main():
     parser = ArgumentParser()
     parser.add_argument("--checkpoint-epoch", type=int, help='Checkpoint epoch number to continue training')
-    parser.add_argument("--test-generator", type=str, help='Path to saved generator state. Also it disables training')
+    parser.add_argument("--test-generator", default=None, type=pathlib.Path,
+                        help='Path to saved generator state. Also it disables training')
+
+    parser.add_argument("--batch-size", default=32, type=int, help="samples per batch")
+    parser.add_argument("--latent-dim", default=16, type=int, help="latent space dimension size")
+
+    parser.add_argument("-s", "--start-epoch", default=0, type=int, help="start epochs")
+    parser.add_argument("-n", "--num-epochs", default=20000, type=int, help="number of epochs")
+
+    parser.add_argument("-l", "--log", default=None, type=pathlib.Path,
+                        help="Path to the log file")
+    parser.add_argument("-i", "--input", default="data/", type=pathlib.Path, help="path to the root directory with images")
     args = parser.parse_args()
 
     os.makedirs("results/generated", exist_ok=True)
@@ -39,26 +50,29 @@ def main():
     os.makedirs("results/checkpoints", exist_ok=True)
     os.makedirs("results/losses", exist_ok=True)
 
-    root = os.path.join("../data")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     transform = tv.transforms.Compose([
+        tv.transforms.Resize((96, 96)),
         tv.transforms.RandomAffine(0, translate=(5 / 96, 5 / 96), fillcolor=(255, 255, 255)),
         tv.transforms.ColorJitter(hue=0.5),
         tv.transforms.RandomHorizontalFlip(p=0.5),
         tv.transforms.ToTensor(),
         tv.transforms.Normalize((0.5, 0.5, 0.5,), (0.5, 0.5, 0.5,))
     ])
+
     dataset = ImageFolder(
-        root=root,
+        root=args.input,
         transform=transform
     )
     dataloader = DataLoader(dataset,
-                            batch_size=BATCH_SIZE,
+                            batch_size=args.batch_size,
                             shuffle=True,
                             num_workers=8,
                             drop_last=True
                             )
     X = iter(dataloader)
+
     test_ims1, _ = next(X)
     test_ims2, _ = next(X)
     test_ims = torch.cat((test_ims1, test_ims2), 0)
@@ -68,14 +82,14 @@ def main():
     image = Image.fromarray(test_ims_show)
     image.save("results/reconstructed/test_images.png")
 
-    noise_fn = lambda x: torch.randn((x, LATENT_DIM), device=device)
+    noise_fn = lambda x: torch.randn((x, args.latent_dim), device=device)
     test_noise = noise_fn(36)
     gan = AEGAN(
-        LATENT_DIM,
+        args.latent_dim,
         noise_fn,
         dataloader,
         device=device,
-        batch_size=BATCH_SIZE,
+        batch_size=args.batch_size,
     )
 
     if args.test_generator is None:
@@ -93,7 +107,8 @@ def main():
                   'Rz': []}
         for name in losses:
             with open(os.path.join('results', 'losses', f'{name}.txt'), 'w') as _: pass   # reset files with losses
-        for i in range(EPOCHS):
+
+        for i in range(args.start_epoch, args.num_epochs):
             while True:
                 try:
                     with open("pause.json") as f:
