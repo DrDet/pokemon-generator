@@ -128,8 +128,12 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# Idea 
+# Idea
 .idea/
 
 # Poetry
 poetry.lock
+
+# data
+data/
+results/
