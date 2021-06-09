@@ -31,7 +31,7 @@ def save_images(GAN, vec, filename):
 def main():
     parser = ArgumentParser()
     parser.add_argument("--checkpoint-epoch", type=int, help='Checkpoint epoch number to continue training')
-    parser.add_argument("--test-generator", type=str, help='Run mode: train or test')
+    parser.add_argument("--test-generator", type=str, help='Path to saved generator state. Also it disables training')
     args = parser.parse_args()
 
     os.makedirs("results/generated", exist_ok=True)
