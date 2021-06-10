@@ -19,6 +19,11 @@ six = "^1.16.0"
 torch = "^1.8.1"
 torchvision = "^0.9.1"
 attrs = "^21.2.0"
+jupyter = "^1.0.0"
+jupyterlab = "^3.0.16"
+pandas = "^1.2.4"
+tqdm = "^4.61.0"
+pytorch-fid = "^0.2.0"
 
 [tool.poetry.dev-dependencies]
 
