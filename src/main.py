@@ -18,6 +18,8 @@ import pathlib
 import time
 from contextlib import closing
 
+from sde.sde import train_sde, Euler_Maruyama_sampler
+
 
 def save_images(GAN, vec, filename):
     images = GAN.generate_samples(vec)
@@ -40,16 +42,17 @@ def main():
     parser.add_argument("-s", "--start-epoch", default=0, type=int, help="start epochs")
     parser.add_argument("-n", "--num-epochs", default=20000, type=int, help="number of epochs")
 
-    parser.add_argument("-l", "--log", default=None, type=pathlib.Path,
+    parser.add_argument("-l", "--log", default='log.csv', type=pathlib.Path,
                         help="Path to the log file")
     parser.add_argument("-i", "--input", default="data/", type=pathlib.Path,
                         help="path to the root directory with images")
+    parser.add_argument("-m", "--mode", default="gan", type=str,
+                        help="running mode: gan or sde")
     args = parser.parse_args()
 
     os.makedirs("results/generated", exist_ok=True)
     os.makedirs("results/reconstructed", exist_ok=True)
     os.makedirs("results/checkpoints", exist_ok=True)
-    os.makedirs("results/losses", exist_ok=True)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -72,8 +75,18 @@ def main():
                             num_workers=8,
                             drop_last=True
                             )
-    X = iter(dataloader)
 
+    if args.mode == 'sde':
+        # TODO: fix ScoreNet to allow 3-channel images
+        score_model = train_sde(data_loader=dataloader, device_=device)
+        samples = Euler_Maruyama_sampler(score_model, device=device)
+        ims = tv.utils.make_grid(samples, normalize=True)
+        plt.imshow(ims.numpy().transpose((1, 2, 0)))
+        plt.show()
+        return
+
+
+    X = iter(dataloader)
     test_ims1, _ = next(X)
     test_ims2, _ = next(X)
     test_ims = torch.cat((test_ims1, test_ims2), 0)
